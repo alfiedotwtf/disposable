@@ -1,0 +1,94 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Digest::SHA qw{sha256_hex};
+use File::Basename;
+
+if (-f '/.dockerenv') {
+  die "Error: you are already inside the disposable container\n";
+}
+
+unless (`docker --version` =~ /^Docker version/) {
+  die "Error: could not run `docker --version`. Is Docker installed?\n";
+}
+
+my $DOCKERFILE      = '.disposable.dockerfile';
+my $BOOTSTRAP       = '.disposable.bootstrap';
+my $IMAGE_NAME      = substr sha256_hex($ENV{PWD}), 0, 16;
+my $CONTAINER_ID    = get_container_id();
+
+if (($ARGV[0] || '') eq '--delete') {
+  if ($CONTAINER_ID) {
+    system "docker container stop $CONTAINER_ID";
+
+    if (get_container_id()) {
+      die "Error: could not stop the container '$CONTAINER_ID'\n";
+    }
+  }
+
+  if (image_exists()) {
+    system "docker image rm $IMAGE_NAME";
+
+    if (image_exists()) {
+      die "Error: could not detele the image '$IMAGE_NAME'\n";
+    }
+  }
+
+  exit;
+}
+
+if (@ARGV > 0) {
+  # let's keep things simple by only having the single `--delete` command
+  print "TODO\n";
+  exit;
+}
+
+if ($CONTAINER_ID) {
+  system "docker attach $CONTAINER_ID";
+  exit;
+}
+
+unless (image_exists()) {
+  my $dockerfile
+    = -f 'Dockerfile'              ? 'Dockerfile'
+    : -f  "$ENV{HOME}/$DOCKERFILE" ? "$ENV{HOME}/$DOCKERFILE"
+    : die "Error: './Dockerfile' or '$ENV{HOME}/$DOCKERFILE' needs to exist\n";
+
+  system "docker build -f $dockerfile -t $IMAGE_NAME .";
+
+  unless (image_exists()) {
+    die "Error: failed to build the image '$IMAGE_NAME'\n";
+  }
+}
+
+if (-f "$ENV{HOME}/$BOOTSTRAP") {
+  unless (-f $BOOTSTRAP) {
+    system "cp $ENV{HOME}/$BOOTSTRAP .";
+
+    unless (-f $BOOTSTRAP) {
+      die "Error: failed to copy bootstrap '$ENV{HOME}/$BOOTSTRAP'\n";
+    }
+  }
+}
+
+system join ' ', (
+  "docker run --rm -it",
+  "--mount type=bind,source=$ENV{PWD},target=/mnt/@{[basename($ENV{PWD})]}",
+  "--cap-add SYS_PTRACE",
+  "-w /mnt/@{[basename($ENV{PWD})]}",
+  $IMAGE_NAME,
+  (-f $BOOTSTRAP ? "./$BOOTSTRAP" : '$SHELL'),
+);
+
+sub get_container_id {
+  ( `docker ps --filter 'ancestor=$IMAGE_NAME'` || '')
+    =~ /^(\w{12})\s+$IMAGE_NAME\s+/m;
+
+  return $1 || '';
+}
+
+sub image_exists {
+  return (`docker image inspect $IMAGE_NAME 2>&1` || '') =~ /"Created"/;
+}
