@@ -7,17 +7,16 @@ use Digest::SHA qw{sha256_hex};
 use File::Basename;
 
 if (-f '/.dockerenv') {
-  die "Error: you are already inside the disposable container\n";
+  die "Error: you are already inside the container\n";
 }
 
-unless (`docker --version` =~ /^Docker version/) {
-  die "Error: could not run `docker --version`. Is Docker installed?\n";
+unless (`docker --version 2>/dev/null` =~ /^Docker version/) {
+  die "Error: could not run `docker --version`. Is Docker installed and in \$PATH?\n";
 }
 
-my $DOCKERFILE      = '.disposable.dockerfile';
-my $BOOTSTRAP       = '.disposable.bootstrap';
-my $IMAGE_NAME      = substr sha256_hex($ENV{PWD}), 0, 16;
-my $CONTAINER_ID    = get_container_id();
+(my $CURRENT_DIR = basename($ENV{PWD})) =~ s/[^\w]/x/g;
+my $IMAGE_NAME   = "disposable-$CURRENT_DIR-@{[substr sha256_hex($ENV{PWD}), 0, 12]}";
+my $CONTAINER_ID = get_container_id();
 
 if (($ARGV[0] || '') eq '--delete') {
   if ($CONTAINER_ID) {
@@ -52,9 +51,9 @@ if ($CONTAINER_ID) {
 
 unless (image_exists()) {
   my $dockerfile
-    = -f 'Dockerfile'              ? 'Dockerfile'
-    : -f  "$ENV{HOME}/$DOCKERFILE" ? "$ENV{HOME}/$DOCKERFILE"
-    : die "Error: './Dockerfile' or '$ENV{HOME}/$DOCKERFILE' needs to exist\n";
+    = -f 'Dockerfile'        ? 'Dockerfile'
+    : -f "$ENV{HOME}/.disposable/Dockerfile" ? "$ENV{HOME}/.disposable/Dockerfile"
+    : die "Error: './Dockerfile' or '$ENV{HOME}/.disposable/Dockerfile' needs to exist\n";
 
   system "docker build -f $dockerfile -t $IMAGE_NAME .";
 
@@ -63,29 +62,20 @@ unless (image_exists()) {
   }
 }
 
-if (-f "$ENV{HOME}/$BOOTSTRAP") {
-  unless (-f $BOOTSTRAP) {
-    system "cp $ENV{HOME}/$BOOTSTRAP .";
-
-    unless (-f $BOOTSTRAP) {
-      die "Error: failed to copy bootstrap '$ENV{HOME}/$BOOTSTRAP'\n";
-    }
-  }
-}
-
 system join ' ', (
   "docker run --rm -it",
-  "--mount type=bind,source=$ENV{PWD},target=/mnt/@{[basename($ENV{PWD})]}",
   "--cap-add SYS_PTRACE",
-  "-w /mnt/@{[basename($ENV{PWD})]}",
+  "-w /mnt/$CURRENT_DIR",
+  "--mount type=bind,source=$ENV{PWD},target=/mnt/$CURRENT_DIR",
+  (-d "$ENV{HOME}/.disposable"
+    ? "--mount ro=true,type=bind,source=$ENV{HOME}/.disposable/,target=/mnt/.disposable"
+    : ""),
   $IMAGE_NAME,
-  (-f $BOOTSTRAP ? "./$BOOTSTRAP" : '$SHELL'),
+  (-x "$ENV{HOME}/.disposable/bootstrap" ? "/mnt/.disposable/bootstrap" : '$SHELL'),
 );
 
 sub get_container_id {
-  ( `docker ps --filter 'ancestor=$IMAGE_NAME'` || '')
-    =~ /^(\w{12})\s+$IMAGE_NAME\s+/m;
-
+  ( `docker container ls -a | grep "\\s$IMAGE_NAME\\s"` || '') =~ /^(\w{12})/;
   return $1 || '';
 }
 
