@@ -55,7 +55,7 @@ unless (image_exists()) {
     : -f "$ENV{HOME}/.disposable/Dockerfile" ? "$ENV{HOME}/.disposable/Dockerfile"
     : die "Error: './Dockerfile' or '$ENV{HOME}/.disposable/Dockerfile' needs to exist\n";
 
-  system "docker build -f $dockerfile -t $IMAGE_NAME .";
+  system "docker build --build-arg UID=$< --build-arg USER=$ENV{USER} -f $dockerfile -t $IMAGE_NAME .";
 
   unless (image_exists()) {
     die "Error: failed to build the image '$IMAGE_NAME'\n";
@@ -64,6 +64,7 @@ unless (image_exists()) {
 
 system join ' ', (
   "docker run --rm -it",
+  "-u $ENV{USER}",
   "--cap-add SYS_PTRACE",
   "-w /mnt/$CURRENT_DIR",
   "--mount type=bind,source=$ENV{PWD},target=/mnt/$CURRENT_DIR",
