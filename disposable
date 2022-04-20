@@ -71,6 +71,10 @@ system join ' ', (
   (-d "$ENV{HOME}/.disposable"
     ? "--mount ro=true,type=bind,source=$ENV{HOME}/.disposable/,target=/mnt/.disposable"
     : ""),
+  "--net=host",
+  "-e DISPLAY=$ENV{DISPLAY}",
+  "-v $ENV{XAUTHORITY}:$ENV{XAUTHORITY}",
+  "-e XAUTHORITY=$ENV{XAUTHORITY}",
   $IMAGE_NAME,
   (-x "$ENV{HOME}/.disposable/bootstrap" ? "/mnt/.disposable/bootstrap" : '$SHELL'),
 );
