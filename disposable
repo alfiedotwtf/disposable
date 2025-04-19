@@ -62,8 +62,10 @@ unless (image_exists()) {
   }
 }
 
+system 'xhost +$(hostname)';
+
 system join ' ', (
-  "docker run --rm -it",
+  "docker run -it",
   "-u $ENV{USER}",
   "--cap-add SYS_PTRACE",
   "-w /mnt/$CURRENT_DIR",
@@ -72,9 +74,7 @@ system join ' ', (
     ? "--mount ro=true,type=bind,source=$ENV{HOME}/.disposable/,target=/mnt/.disposable"
     : ""),
   "--net=host",
-  "-e DISPLAY=$ENV{DISPLAY}",
-  "-v $ENV{XAUTHORITY}:$ENV{XAUTHORITY}",
-  "-e XAUTHORITY=$ENV{XAUTHORITY}",
+  "-e DISPLAY=host.docker.internal:0",
   $IMAGE_NAME,
   (-x "$ENV{HOME}/.disposable/bootstrap" ? "/mnt/.disposable/bootstrap" : '$SHELL'),
 );
